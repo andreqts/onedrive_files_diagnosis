@@ -2,13 +2,8 @@ import os
 import sys
 import time
 import unicodedata
+import argparse
 from datetime import datetime
-
-# CONFIGURE HERE: OneDrive local folder path
-ONEDRIVE_PATH = r"C:\Users\andre\OneDrive"
-
-# Report path
-REPORT = "onedrive_diagnosis.txt"
 
 # Prohibited characters by OneDrive/Windows
 INVALID_CHARS = set('<>:"/\\|?*')
@@ -58,20 +53,29 @@ def check_file(path, report):
         report.write("\n")
 
 def main():
-    if not os.path.exists(ONEDRIVE_PATH):
-        print("OneDrive path not found.")
+    parser = argparse.ArgumentParser(description="OneDrive Diagnosis Tool")
+    parser.add_argument("path", help="OneDrive local folder path")
+    parser.add_argument("report", nargs='?', default="onedrive_diagnosis.txt", help="Report file name/path (default: onedrive_diagnosis.txt)")
+    args = parser.parse_args()
+
+    onedrive_path = args.path
+    report_file = args.report
+
+    if not os.path.exists(onedrive_path):
+        print(f"Error: OneDrive path not found: {onedrive_path}")
         sys.exit(1)
 
-    with open(REPORT, "w", encoding="utf-8") as report:
+    with open(report_file, "w", encoding="utf-8") as report:
         report.write("=== OneDrive Diagnosis ===\n")
         report.write(f"Date: {datetime.now()}\n\n")
+        report.write(f"Scanned Path: {onedrive_path}\n\n")
 
-        for root, dirs, files in os.walk(ONEDRIVE_PATH):
+        for root, dirs, files in os.walk(onedrive_path):
             for f in files:
                 full = os.path.join(root, f)
                 check_file(full, report)
 
-    print(f"Diagnosis completed. View the file: {REPORT}")
+    print(f"Diagnosis completed. View the file: {report_file}")
 
 if __name__ == "__main__":
     main()
