@@ -8,6 +8,10 @@ from datetime import datetime
 # Prohibited characters by OneDrive/Windows
 INVALID_CHARS = set('<>:"/\\|?*')
 
+# Path length limits
+OLD_PATH_LIMIT = 250
+CURRENT_PATH_LIMIT = 400
+
 def has_invalid_chars(name):
     return any(c in INVALID_CHARS for c in name)
 
@@ -19,7 +23,10 @@ def has_wsl_remapped_chars(name):
     return any(0xF000 <= ord(c) <= 0xF0FF for c in name)
 
 def is_path_too_long(path):
-    return len(path) > 250  # safety margin
+    return len(path) > CURRENT_PATH_LIMIT
+
+def is_path_warning(path):
+    return OLD_PATH_LIMIT < len(path) <= CURRENT_PATH_LIMIT
 
 def has_invalid_timestamp(path):
     try:
@@ -30,39 +37,54 @@ def has_invalid_timestamp(path):
         return True
 
 def check_file(path, report):
-    problems = []
+    problems = {
+        'issues': [],
+        'warnings': []
+    }
 
     name = os.path.basename(path)
 
     if has_invalid_chars(name):
-        problems.append("Invalid characters in name")
+        problems['issues'].append("Invalid characters in name")
 
     if has_invisible_chars(name):
-        problems.append("Invisible characters in name")
+        problems['issues'].append("Invisible characters in name")
 
     if has_wsl_remapped_chars(name):
-        problems.append("WSL-remapped character detected (likely forbidden on Windows)")
+        problems['issues'].append("WSL-remapped character detected (likely forbidden on Windows)")
 
+    path_len = len(path)
     if is_path_too_long(path):
-        problems.append("Path too long (>250 chars)")
+        problems['issues'].append(f"Path too long ({path_len} chars, max {CURRENT_PATH_LIMIT})")
+    elif is_path_warning(path):
+        problems['warnings'].append(f"Path length warning ({path_len} chars, over {OLD_PATH_LIMIT})")
 
     if has_invalid_timestamp(path):
-        problems.append("Invalid timestamp")
+        problems['issues'].append("Invalid timestamp")
 
     if name.endswith(" "):
-        problems.append("Trailing space in name")
+        problems['issues'].append("Trailing space in name")
 
     if name.endswith("."):
-        problems.append("Trailing dot in name")
+        problems['issues'].append("Trailing dot in name")
 
     # ADS (Alternate Data Streams)
     if ":" in name and not path.startswith("\\\\?\\"):
-        problems.append("Alternate Data Stream detected")
+        problems['issues'].append("Alternate Data Stream detected")
 
-    if problems:
-        report.write(f"[ISSUE] {path}\n")
-        for p in problems:
-            report.write(f"  - {p}\n")
+    if problems['issues'] or problems['warnings']:
+        # If there are any issues, the file as a whole is flagged as an ISSUE
+        status = "ISSUE" if problems['issues'] else "WARNING"
+        report.write(f"[{status}] {path}\n")
+        
+        for i in problems['issues']:
+            report.write(f"  - {i}\n")
+            
+        for w in problems['warnings']:
+            # If the overall file is an ISSUE, prefix warnings to distinguish them
+            prefix = "[WARNING] " if problems['issues'] else ""
+            report.write(f"  - {prefix}{w}\n")
+            
         report.write("\n")
 
 def main():
