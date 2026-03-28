@@ -13,6 +13,8 @@ OLD_PATH_LIMIT = 250
 RELATIVE_PATH_LIMIT = 400
 ABSOLUTE_PATH_LIMIT = 520
 SEGMENT_LIMIT = 255
+# Microsoft recommends not syncing more than 300,000 files
+MAX_SYNC_FILES_LIMIT = 300000  # Microsoft recommended sync limit
 
 def has_invalid_chars(name):
     return any(c in INVALID_CHARS for c in name)
@@ -105,6 +107,7 @@ def main():
     parser = argparse.ArgumentParser(description="OneDrive Diagnosis Tool")
     parser.add_argument("path", help="OneDrive local folder path")
     parser.add_argument("report", nargs='?', default="onedrive_diagnosis.txt", help="Report file name/path (default: onedrive_diagnosis.txt)")
+    parser.add_argument("--test_mode", action="store_true", help="Enable test mode (lowers MAX_SYNC_FILES_LIMIT to 10 for automated testing)")
     args = parser.parse_args()
 
     onedrive_path = os.path.abspath(args.path)
@@ -143,6 +146,15 @@ def main():
                     stats['files_with_issues'] += 1
                 elif num_warnings > 0:
                     stats['files_with_only_warnings'] += 1
+
+        sync_limit = 10 if args.test_mode else MAX_SYNC_FILES_LIMIT
+        if stats['files_scanned'] > sync_limit:
+            warning_msg = f"\n[ALERT] Performance Warning: This folder contains {stats['files_scanned']} items, which exceeds Microsoft's recommended sync limit of {sync_limit} items.\nSyncing more than {MAX_SYNC_FILES_LIMIT} items can cause significant performance degradation.\n"
+            report.write("========================================\n")
+            report.write("!!!!! CRITICAL PERFORMANCE ALERT !!!!!\n")
+            report.write(warning_msg)
+            report.write("========================================\n\n")
+            print(warning_msg)
 
         report.write("----------------------------------------\n")
         report.write("SCAN SUMMARY\n")
