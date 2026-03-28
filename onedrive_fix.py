@@ -10,7 +10,9 @@ INVALID_CHARS = set('<>:"/\\|?*')
 
 # Path length limits
 OLD_PATH_LIMIT = 250
-CURRENT_PATH_LIMIT = 400
+RELATIVE_PATH_LIMIT = 400
+ABSOLUTE_PATH_LIMIT = 520
+SEGMENT_LIMIT = 255
 
 def has_invalid_chars(name):
     return any(c in INVALID_CHARS for c in name)
@@ -22,11 +24,7 @@ def has_wsl_remapped_chars(name):
     # WSL (DrvFs) maps illegal NTFS characters to the Unicode Private Use Area (U+F000 - U+F0FF)
     return any(0xF000 <= ord(c) <= 0xF0FF for c in name)
 
-def is_path_too_long(path):
-    return len(path) > CURRENT_PATH_LIMIT
-
-def is_path_warning(path):
-    return OLD_PATH_LIMIT < len(path) <= CURRENT_PATH_LIMIT
+    return any(0xF000 <= ord(c) <= 0xF0FF for c in name)
 
 def has_invalid_timestamp(path):
     try:
@@ -36,7 +34,7 @@ def has_invalid_timestamp(path):
     except:
         return True
 
-def check_file(path, report):
+def check_file(path, onedrive_root, report):
     problems = {
         'issues': [],
         'warnings': []
@@ -53,11 +51,24 @@ def check_file(path, report):
     if has_wsl_remapped_chars(name):
         problems['issues'].append("WSL-remapped character detected (likely forbidden on Windows)")
 
+    # Segment length check
+    for part in os.path.normpath(path).split(os.sep):
+        if len(part) > SEGMENT_LIMIT:
+            problems['issues'].append(f"Path segment '{part[:15]}...' too long ({len(part)} chars, max {SEGMENT_LIMIT})")
+            break
+
+    # Absolute and Relative path length checks
+    rel_path = os.path.relpath(path, onedrive_root)
     path_len = len(path)
-    if is_path_too_long(path):
-        problems['issues'].append(f"Path too long ({path_len} chars, max {CURRENT_PATH_LIMIT})")
-    elif is_path_warning(path):
-        problems['warnings'].append(f"Path length warning ({path_len} chars, over {OLD_PATH_LIMIT})")
+    rel_len = len(rel_path)
+    
+    if path_len > ABSOLUTE_PATH_LIMIT:
+        problems['issues'].append(f"Absolute path too long ({path_len} chars, max {ABSOLUTE_PATH_LIMIT})")
+    elif path_len > OLD_PATH_LIMIT:
+        problems['warnings'].append(f"Absolute path length Explorer warning ({path_len} chars, over {OLD_PATH_LIMIT})")
+
+    if rel_len > RELATIVE_PATH_LIMIT:
+        problems['issues'].append(f"Relative path too long ({rel_len} chars, max {RELATIVE_PATH_LIMIT})")
 
     if has_invalid_timestamp(path):
         problems['issues'].append("Invalid timestamp")
@@ -87,6 +98,7 @@ def check_file(path, report):
             
         report.write("\n")
         
+        
     return problems
 
 def main():
@@ -95,7 +107,7 @@ def main():
     parser.add_argument("report", nargs='?', default="onedrive_diagnosis.txt", help="Report file name/path (default: onedrive_diagnosis.txt)")
     args = parser.parse_args()
 
-    onedrive_path = args.path
+    onedrive_path = os.path.abspath(args.path)
     report_file = args.report
 
     if not os.path.exists(onedrive_path):
@@ -118,7 +130,7 @@ def main():
         for root, dirs, files in os.walk(onedrive_path):
             for f in files:
                 full = os.path.join(root, f)
-                problems = check_file(full, report)
+                problems = check_file(full, onedrive_path, report)
                 stats['files_scanned'] += 1
                 
                 num_issues = len(problems['issues'])
